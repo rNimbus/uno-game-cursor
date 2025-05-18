@@ -13,10 +13,16 @@ extends Node
 @onready var draw_indicator = $"../DrawIndicator"
 @onready var player_labels = [$"../Player1Label", $"../Player2Label", $"../Player3Label", $"../Player4Label"]
 
-const CARD_WIDTH = 80
-const CARD_HEIGHT = 120
-const CARD_SPACING = -55
+const CARD_WIDTH = 100
+const CARD_HEIGHT = 150
+const CARD_SPACING = -70
+const SIDE_BOT_CARD_WIDTH = 150  # Wider for horizontal card design
+const SIDE_BOT_CARD_HEIGHT = 100  # Shorter for horizontal card design
+const SIDE_BOT_CARD_SPACING = -110  # Adjusted to match vertical card overlap ratio
 const BOT_CARD_BACK = preload("res://Asset Lib/Deck.png")
+const BOT_CARD_BACK_SIDE = preload("res://Asset Lib/Deck_Rotated.png")  # Vertical UNO text for left bot
+const BOT_CARD_BACK_SIDE_OTHER = preload("res://Asset Lib/Deck_OtherRotated.png")  # Vertical UNO text for right bot
+const BOT_CARD_BACK_UPSIDE = preload("res://Asset Lib/Deck_Upside.png")  # Upside down UNO text for top bot
 
 func _ready():
 	# Connect signals
@@ -30,6 +36,19 @@ func _ready():
 	
 	# Hide draw indicator initially
 	draw_indicator.hide()
+	
+	# Set bot hand spacing and sizes
+	bot_hands[0].custom_minimum_size = Vector2(SIDE_BOT_CARD_HEIGHT, 400)  # Left bot - using height as width since rotated
+	bot_hands[1].custom_minimum_size = Vector2(500, CARD_HEIGHT)  # Top bot - normal size
+	bot_hands[2].custom_minimum_size = Vector2(SIDE_BOT_CARD_HEIGHT, 400)  # Right bot - using height as width since rotated
+	
+	# Ensure the containers are wide enough for the rotated cards
+	bot_hands[0].size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	bot_hands[2].size_flags_horizontal = Control.SIZE_SHRINK_END
+	
+	bot_hands[0].add_theme_constant_override("separation", SIDE_BOT_CARD_SPACING)
+	bot_hands[1].add_theme_constant_override("separation", CARD_SPACING)  # Normal spacing for top
+	bot_hands[2].add_theme_constant_override("separation", SIDE_BOT_CARD_SPACING)
 	
 	# Wait for next frame to ensure game manager is initialized
 	await get_tree().process_frame
@@ -103,20 +122,31 @@ func update_hands():
 			var bot = game_manager.players[i + 1]
 			for _card in bot.hand:
 				var card_texture = TextureRect.new()
-				card_texture.texture = BOT_CARD_BACK
-				card_texture.custom_minimum_size = Vector2(CARD_WIDTH, CARD_HEIGHT)
+				if i == 1:  # Top bot
+					card_texture.custom_minimum_size = Vector2(CARD_WIDTH, CARD_HEIGHT)
+				else:  # Side bots
+					card_texture.custom_minimum_size = Vector2(SIDE_BOT_CARD_WIDTH, SIDE_BOT_CARD_HEIGHT)
+				
 				card_texture.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 				card_texture.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 				card_texture.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 				card_texture.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT
 				card_texture.visible = true
 				
-				# For side bots (Bot1 and Bot3), rotate the cards
-				if i == 0: # Left bot
-					card_texture.rotation = PI/2
-				elif i == 2: # Right bot
-					card_texture.rotation = -PI/2
-					
+				# Rotate all cards to point towards center
+				if i == 0: # Left bot (Bot 1)
+					card_texture.texture = BOT_CARD_BACK_SIDE
+					card_texture.rotation_degrees = 90  # Rotate left side cards 90 degrees
+					card_texture.pivot_offset = Vector2(SIDE_BOT_CARD_WIDTH/2, SIDE_BOT_CARD_HEIGHT/2)
+				elif i == 1: # Top bot (Bot 2)
+					card_texture.texture = BOT_CARD_BACK_UPSIDE
+					card_texture.rotation_degrees = 180  # Rotate top cards 180 degrees
+					card_texture.pivot_offset = Vector2(CARD_WIDTH/2, CARD_HEIGHT/2)
+				elif i == 2: # Right bot (Bot 3)
+					card_texture.texture = BOT_CARD_BACK_SIDE_OTHER
+					card_texture.rotation_degrees = 450  # Rotate right side cards 450 degrees (270 + 180)
+					card_texture.pivot_offset = Vector2(SIDE_BOT_CARD_WIDTH/2, SIDE_BOT_CARD_HEIGHT/2)
+				
 				bot_hands[i].add_child(card_texture)
 				# Force card to be visible
 				card_texture.show()
@@ -137,6 +167,7 @@ func update_piles():
 		var top_card = game_manager.discard_pile.back()
 		if top_card and top_card.texture:
 			discard_pile.texture = top_card.texture
+			discard_pile.custom_minimum_size = Vector2(CARD_WIDTH, CARD_HEIGHT)
 			discard_pile.show()
 			print("Updated discard pile with: " + top_card.get_card_name())
 			
@@ -150,6 +181,7 @@ func update_piles():
 	# Update draw pile
 	if not game_manager.deck.is_empty():
 		draw_pile.texture = BOT_CARD_BACK
+		draw_pile.custom_minimum_size = Vector2(CARD_WIDTH, CARD_HEIGHT)
 		draw_pile.show()
 	else:
 		draw_pile.hide()

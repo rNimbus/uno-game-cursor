@@ -37,10 +37,19 @@ func _load_texture():
 				texture_path += "Draw"
 		texture_path += ".png"
 	
-	print("Loading card texture from: " + texture_path)
+	print("Attempting to load card texture from: " + texture_path)
 	texture = load(texture_path)
-	if not texture:
+	if texture:
+		print("Successfully loaded texture: " + texture_path)
+	else:
 		push_error("Failed to load card texture: " + texture_path)
+		# Try to verify if the file exists
+		var file = FileAccess.open(texture_path, FileAccess.READ)
+		if file:
+			print("File exists but failed to load as texture")
+			file = null
+		else:
+			print("File does not exist at path: " + texture_path)
 
 func can_play_on(top_card: Card) -> bool:
 	if color == CardColor.WILD:
