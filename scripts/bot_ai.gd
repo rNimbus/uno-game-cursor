@@ -13,9 +13,18 @@ var value_likelihood: Dictionary = {}  # P(Player plays card | Value)
 
 # Game state tracking
 var cards_played: Array = []
+var discard_memory: Array = []  # Memory of all discarded cards
 var opponent_cards_count: Dictionary = {}
 var known_opponent_cards: Dictionary = {}
 var player_history: Array = []  # Track player's moves for better learning
+
+# Scoring weights for move evaluation
+var weight_color_match: float = 2.0
+var weight_number_match: float = 1.5
+var weight_special_card: float = 3.0
+var weight_wild_card: float = 4.0
+var weight_card_advantage: float = 1.0
+const MAX_DEPTH = 3  # Maximum depth for DFS analysis
 
 func _init():
 	_initialize_probabilities()
@@ -44,95 +53,117 @@ func _initialize_probabilities():
 
 func update_probabilities(played_card: Card):
 	cards_played.append(played_card)
-	player_history.append(played_card)  # Track for advanced learning
+	player_history.append(played_card)
+	discard_memory.append(played_card)
 	
-	# Update probabilities based on played card
-	var total_cards = cards_played.size()
-	
-	# Update color probabilities
-	for color in Card.CardColor.keys():
-		var color_count = cards_played.count(func(card): return card.color == Card.CardColor[color])
-		color_probabilities[color] = float(color_count) / total_cards
-	
-	# Update type probabilities
-	for type in Card.CardType.keys():
-		var type_count = cards_played.count(func(card): return card.card_type == Card.CardType[type])
-		type_probabilities[type] = float(type_count) / total_cards
-	
-	# Update value probabilities for number cards
-	var number_cards = cards_played.filter(func(card): return card.card_type == Card.CardType.NUMBER)
-	var total_numbers = number_cards.size()
-	if total_numbers > 0:
-		for i in range(10):
-			var value_count = number_cards.count(func(card): return card.value == i)
-			value_probabilities[i] = float(value_count) / total_numbers
-	
-	# Update likelihood based on player history (from new implementation)
-	if player_history.size() >= 2:
-		var last_card = player_history[-2]  # Get second to last card
-		var current_card = player_history[-1]  # Get last card
-		
-		# Update color likelihood
-		if last_card.color == current_card.color:
-			color_likelihood[Card.CardColor.keys()[current_card.color]] = 0.7  # Higher probability for matching color
-		else:
-			for color in Card.CardColor.keys():
-				color_likelihood[color] = max(0.1, color_likelihood[color] * 0.9)  # Decay other probabilities
-		
-		# Update value likelihood
-		var current_value = str(current_card.value) if current_card.card_type == Card.CardType.NUMBER else Card.CardType.keys()[current_card.card_type]
-		var last_value = str(last_card.value) if last_card.card_type == Card.CardType.NUMBER else Card.CardType.keys()[last_card.card_type]
-		
-		if current_value == last_value:
-			value_likelihood[current_value] = 0.7  # Higher probability for matching value
-		else:
-			for value in value_likelihood.keys():
-				value_likelihood[value] = max(0.1, value_likelihood[value] * 0.9)  # Decay other probabilities
+	# Update opponent card counts and adjust weights
+	for player_id in opponent_cards_count.keys():
+		if opponent_cards_count[player_id] <= 2:
+			# Opponent is close to winning, prioritize defensive plays
+			weight_special_card = 4.5  # Increase weight temporarily
 
 func choose_best_card(hand: Array, top_card: Card) -> Card:
 	var playable_cards = hand.filter(func(card): return card.can_play_on(top_card))
 	if playable_cards.is_empty():
 		return null
-		
-	var best_card = null
-	var highest_score = -1.0
 	
+	var best_card = null
+	var best_score = -1.0
+	
+	# Use DFS to analyze each possible move
 	for card in playable_cards:
-		var score = _calculate_card_score(card)
-		if score > highest_score:
-			highest_score = score
+		var score = evaluate_move_dfs(card, hand.duplicate(), 0)
+		if score > best_score:
+			best_score = score
 			best_card = card
 	
 	return best_card
 
-func _calculate_card_score(card: Card) -> float:
-	var score = 1.0
+func evaluate_move_dfs(card: Card, remaining_hand: Array, depth: int) -> float:
+	if depth >= MAX_DEPTH:
+		return calculate_base_score(card)
 	
-	# Color score incorporating both prior and likelihood
-	var color_key = Card.CardColor.keys()[card.color]
-	score *= color_probabilities[color_key] * (1 - color_likelihood[color_key])
+	var score = calculate_base_score(card)
+	remaining_hand.erase(card)
 	
-	# Type score
-	var type_key = Card.CardType.keys()[card.card_type]
-	score *= type_probabilities[type_key]
-	
-	# Value score incorporating both prior and likelihood
-	if card.card_type == Card.CardType.NUMBER:
-		var value_key = str(card.value)
-		score *= value_probabilities[card.value] * (1 - value_likelihood[value_key])
-	else:
-		score *= (1 - value_likelihood[type_key])
-	
-	# Enhanced special card scoring from new implementation
-	if card.card_type == Card.CardType.WILD_DRAW_FOUR:
-		score *= 2.0  # Highest priority for Wild Draw Four
-	elif card.card_type == Card.CardType.WILD:
-		score *= 1.5  # High priority for Wild
-	elif card.card_type in [Card.CardType.SKIP, Card.CardType.REVERSE, Card.CardType.DRAW_TWO]:
-		var opponents_with_few_cards = opponent_cards_count.values().count(func(count): return count <= 2)
-		score *= (1.5 + (opponents_with_few_cards * 0.2))  # Enhanced bonus for special cards
+	# Analyze potential future moves
+	var potential_moves = get_potential_moves(remaining_hand)
+	if not potential_moves.is_empty():
+		var best_future_score = 0.0
+		for move in potential_moves:
+			var future_score = evaluate_move_dfs(move, remaining_hand.duplicate(), depth + 1)
+			best_future_score = max(best_future_score, future_score)
+		score += best_future_score * (1.0 / (depth + 1))  # Weight future moves less with depth
 	
 	return score
+
+func get_potential_moves(hand: Array) -> Array:
+	var moves = []
+	for card in hand:
+		# Check if this move would be advantageous
+		if is_advantageous_move(card):
+			moves.append(card)
+	return moves
+
+func is_advantageous_move(card: Card) -> bool:
+	# Check if this card type has been successful in the past
+	var similar_plays = discard_memory.filter(func(played): 
+		return played.card_type == card.card_type or played.color == card.color
+	)
+	
+	# Check if opponents are close to winning
+	var opponents_near_win = false
+	for count in opponent_cards_count.values():
+		if count <= 2:
+			opponents_near_win = true
+			break
+	
+	# Special cards are advantageous when opponents are close to winning
+	if opponents_near_win and card.card_type != Card.CardType.NUMBER:
+		return true
+	
+	# Cards that match frequently played colors/types are advantageous
+	return similar_plays.size() >= 2
+
+func calculate_base_score(card: Card) -> float:
+	var score = 0.0
+	
+	# Analyze color frequency in discard pile
+	var color_frequency = get_color_frequency()
+	if card.color != Card.CardColor.WILD:
+		score += weight_color_match * (color_frequency.get(card.color, 0) / max(1, discard_memory.size()))
+	
+	# Score based on card type
+	match card.card_type:
+		Card.CardType.WILD_DRAW_FOUR:
+			score += weight_wild_card * 1.5
+		Card.CardType.WILD:
+			score += weight_wild_card
+		Card.CardType.DRAW_TWO, Card.CardType.SKIP, Card.CardType.REVERSE:
+			score += weight_special_card
+		Card.CardType.NUMBER:
+			# Check if number matches last played number
+			if not discard_memory.is_empty():
+				var last_card = discard_memory.back()
+				if last_card.card_type == Card.CardType.NUMBER and last_card.value == card.value:
+					score += weight_number_match
+	
+	# Consider card advantage
+	score += weight_card_advantage * (1.0 / max(1, get_min_opponent_cards()))
+	
+	return score
+
+func get_color_frequency() -> Dictionary:
+	var frequency = {}
+	for card in discard_memory:
+		if card.color != Card.CardColor.WILD:
+			frequency[card.color] = frequency.get(card.color, 0) + 1
+	return frequency
+
+func get_min_opponent_cards() -> int:
+	if opponent_cards_count.is_empty():
+		return 1
+	return opponent_cards_count.values().min()
 
 func update_opponent_cards(player_id: int, card_count: int):
 	opponent_cards_count[player_id] = card_count
@@ -142,23 +173,30 @@ func record_opponent_card(player_id: int, card: Card):
 		known_opponent_cards[player_id] = []
 	known_opponent_cards[player_id].append(card)
 
-# New helper function from the provided implementation
 func choose_best_color(hand: Array) -> int:
-	var color_counts = {}
-	for color in Card.CardColor.keys():
-		color_counts[color] = 0
+	var color_scores = {}
 	
+	# Initialize scores for each color
+	for color in range(4):  # Excluding WILD
+		color_scores[color] = 0.0
+	
+	# Score based on cards in hand
 	for card in hand:
-		if card.color != Card.CardColor.WILD:  # Assuming WILD is the last color in the enum
-			var color_key = Card.CardColor.keys()[card.color]
-			color_counts[color_key] += 1
+		if card.color != Card.CardColor.WILD:
+			color_scores[card.color] += 1.0
 	
-	var best_color = Card.CardColor.RED  # Default to red
-	var max_count = 0
+	# Score based on discard memory
+	var color_frequency = get_color_frequency()
+	for color in color_frequency:
+		color_scores[color] += 0.5 * (color_frequency[color] / max(1, discard_memory.size()))
 	
-	for color in Card.CardColor.keys():
-		if color_counts[color] > max_count:
-			max_count = color_counts[color]
-			best_color = Card.CardColor[color]
+	# Choose color with highest score
+	var best_color = Card.CardColor.RED
+	var best_score = 0.0
+	
+	for color in color_scores:
+		if color_scores[color] > best_score:
+			best_score = color_scores[color]
+			best_color = color
 	
 	return best_color 

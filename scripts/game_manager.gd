@@ -80,17 +80,19 @@ func create_deck():
 		# One zero card per color
 		deck.append(Card.new(color, Card.CardType.NUMBER, 0))
 		
-		# One card each for numbers 1-9
+		# Two cards each for numbers 1-9
 		for number in range(1, 10):
 			deck.append(Card.new(color, Card.CardType.NUMBER, number))
+			deck.append(Card.new(color, Card.CardType.NUMBER, number))
 		
-		# Add special cards (1 each per color)
-		deck.append(Card.new(color, Card.CardType.SKIP))
-		deck.append(Card.new(color, Card.CardType.REVERSE))
-		deck.append(Card.new(color, Card.CardType.DRAW_TWO))
+		# Add special cards (2 each per color)
+		for _i in range(2):
+			deck.append(Card.new(color, Card.CardType.SKIP))
+			deck.append(Card.new(color, Card.CardType.REVERSE))
+			deck.append(Card.new(color, Card.CardType.DRAW_TWO))
 	
-	# Add wild cards (2 of each type)
-	for _i in range(2):
+	# Add wild cards (4 of each type)
+	for _i in range(4):
 		deck.append(Card.new(Card.CardColor.WILD, Card.CardType.WILD))
 		deck.append(Card.new(Card.CardColor.WILD, Card.CardType.WILD_DRAW_FOUR))
 	
@@ -145,6 +147,7 @@ func reshuffle_discard_pile():
 		emit_signal("game_state_changed")
 	else:
 		print("Not enough cards to reshuffle!")
+		end_game()
 
 func start_game():
 	game_started = true
@@ -214,6 +217,9 @@ func play_card(player, card):
 	player.hand.erase(card)
 	discard_pile.append(card)
 	print(player.name + " played " + card.get_card_name())
+	
+	# Update history
+	$UIManager.add_to_history(player.name, card.get_card_name())
 	
 	# Check if player has finished - this is now a win condition
 	if player.hand.is_empty():
@@ -285,17 +291,20 @@ func check_game_end():
 		end_game()
 
 func end_game():
-	# Sort remaining players by card count
-	var remaining_players = active_players.duplicate()
-	remaining_players.sort_custom(func(a, b): return a.hand.size() < b.hand.size())
-	
-	# If we have finished players (someone won by playing all cards), they stay in order
-	# Otherwise, rank everyone by card count
+	# If someone won by playing all cards, they should be first
 	var final_rankings = []
 	if finished_players.size() > 0:
-		final_rankings = finished_players + remaining_players
+		# Add the player who played all cards first
+		final_rankings = finished_players.duplicate()
+		
+		# Add remaining players sorted by card count
+		var remaining_players = active_players.duplicate()
+		remaining_players.sort_custom(func(a, b): return a.hand.size() < b.hand.size())
+		final_rankings.append_array(remaining_players)
 	else:
-		final_rankings = remaining_players
+		# No one played all cards - sort everyone by card count
+		final_rankings = active_players.duplicate()
+		final_rankings.sort_custom(func(a, b): return a.hand.size() < b.hand.size())
 	
 	print("\nGame Over! Final Rankings:")
 	for i in range(final_rankings.size()):

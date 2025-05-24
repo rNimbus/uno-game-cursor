@@ -12,6 +12,9 @@ extends Node
 @onready var direction_arrow = $"../DirectionArrow"
 @onready var draw_indicator = $"../DrawIndicator"
 @onready var player_labels = [$"../Player1Label", $"../Player2Label", $"../Player3Label", $"../Player4Label"]
+@onready var history_box = $"../HistoryBox/HistoryText"
+@onready var sort_color_button = $"../SortButtons/ColorSort"
+@onready var sort_number_button = $"../SortButtons/NumberSort"
 
 const CARD_WIDTH = 100
 const CARD_HEIGHT = 150
@@ -23,6 +26,7 @@ const BOT_CARD_BACK = preload("res://Asset Lib/Deck.png")
 const BOT_CARD_BACK_SIDE = preload("res://Asset Lib/Deck_Rotated.png")  # Vertical UNO text for left bot
 const BOT_CARD_BACK_SIDE_OTHER = preload("res://Asset Lib/Deck_OtherRotated.png")  # Vertical UNO text for right bot
 const BOT_CARD_BACK_UPSIDE = preload("res://Asset Lib/Deck_Upside.png")  # Upside down UNO text for top bot
+const MAX_HISTORY_LINES = 10
 
 func _ready():
 	# Connect signals
@@ -33,6 +37,10 @@ func _ready():
 	# Connect color selector buttons
 	for button in color_selector.get_children():
 		button.pressed.connect(_on_color_selected.bind(button.text.to_lower()))
+	
+	# Connect sorting buttons
+	sort_color_button.pressed.connect(_on_sort_color_pressed)
+	sort_number_button.pressed.connect(_on_sort_number_pressed)
 	
 	# Hide draw indicator initially
 	draw_indicator.hide()
@@ -137,15 +145,15 @@ func update_hands():
 				if i == 0: # Left bot (Bot 1)
 					card_texture.texture = BOT_CARD_BACK_SIDE
 					card_texture.rotation_degrees = 90  # Rotate left side cards 90 degrees
-					card_texture.pivot_offset = Vector2(SIDE_BOT_CARD_WIDTH/2, SIDE_BOT_CARD_HEIGHT/2)
+					card_texture.pivot_offset = Vector2(float(SIDE_BOT_CARD_WIDTH)/2.0, float(SIDE_BOT_CARD_HEIGHT)/2.0)
 				elif i == 1: # Top bot (Bot 2)
 					card_texture.texture = BOT_CARD_BACK_UPSIDE
 					card_texture.rotation_degrees = 180  # Rotate top cards 180 degrees
-					card_texture.pivot_offset = Vector2(CARD_WIDTH/2, CARD_HEIGHT/2)
+					card_texture.pivot_offset = Vector2(float(CARD_WIDTH)/2.0, float(CARD_HEIGHT)/2.0)
 				elif i == 2: # Right bot (Bot 3)
 					card_texture.texture = BOT_CARD_BACK_SIDE_OTHER
 					card_texture.rotation_degrees = 450  # Rotate right side cards 450 degrees (270 + 180)
-					card_texture.pivot_offset = Vector2(SIDE_BOT_CARD_WIDTH/2, SIDE_BOT_CARD_HEIGHT/2)
+					card_texture.pivot_offset = Vector2(float(SIDE_BOT_CARD_WIDTH)/2.0, float(SIDE_BOT_CARD_HEIGHT)/2.0)
 				
 				bot_hands[i].add_child(card_texture)
 				# Force card to be visible
@@ -164,16 +172,16 @@ func _on_card_hover_exit(card_button: TextureButton):
 func update_piles():
 	# Update discard pile
 	if not game_manager.discard_pile.is_empty():
-		var top_card = game_manager.discard_pile.back()
-		if top_card and top_card.texture:
-			discard_pile.texture = top_card.texture
+		var _top_card = game_manager.discard_pile.back()
+		if _top_card and _top_card.texture:
+			discard_pile.texture = _top_card.texture
 			discard_pile.custom_minimum_size = Vector2(CARD_WIDTH, CARD_HEIGHT)
 			discard_pile.show()
-			print("Updated discard pile with: " + top_card.get_card_name())
+			print("Updated discard pile with: " + _top_card.get_card_name())
 			
 			# Update color based on the top card if it's not a wild card waiting for color
-			if not game_manager.waiting_for_color and (top_card.card_type != Card.CardType.WILD and top_card.card_type != Card.CardType.WILD_DRAW_FOUR):
-				game_manager.current_color = top_card.color
+			if not game_manager.waiting_for_color and (_top_card.card_type != Card.CardType.WILD and _top_card.card_type != Card.CardType.WILD_DRAW_FOUR):
+				game_manager.current_color = _top_card.color
 		else:
 			discard_pile.hide()
 		print("No cards in discard pile")
@@ -266,4 +274,77 @@ func _on_game_state_changed():
 	if game_manager.waiting_for_color:
 		color_selector.show()
 	else:
-		color_selector.hide() 
+		color_selector.hide()
+
+# Add card to history
+func add_to_history(player_name: String, card_name: String):
+	var history_text = history_box.text
+	var lines = Array(history_text.split("\n", false))
+	
+	# Add new line at the beginning
+	lines.insert(0, "%s played %s" % [player_name, card_name])
+	
+	# Keep only the last MAX_HISTORY_LINES lines
+	if lines.size() > MAX_HISTORY_LINES:
+		lines = lines.slice(0, MAX_HISTORY_LINES)
+	
+	history_box.text = "\n".join(lines)
+
+# Sorting functions using merge sort
+func merge_sort_cards(cards: Array, compare_func: Callable) -> Array:
+	if cards.size() <= 1:
+		return cards
+	
+	var mid = float(cards.size())/2.0
+	var left = cards.slice(0, mid)
+	var right = cards.slice(mid)
+	
+	left = merge_sort_cards(left, compare_func)
+	right = merge_sort_cards(right, compare_func)
+	
+	return merge(left, right, compare_func)
+
+func merge(left: Array, right: Array, compare_func: Callable) -> Array:
+	var result = []
+	var left_idx = 0
+	var right_idx = 0
+	
+	while left_idx < left.size() and right_idx < right.size():
+		if compare_func.call(left[left_idx], right[right_idx]):
+			result.append(left[left_idx])
+			left_idx += 1
+		else:
+			result.append(right[right_idx])
+			right_idx += 1
+	
+	# Add remaining elements
+	result.append_array(left.slice(left_idx))
+	result.append_array(right.slice(right_idx))
+	
+	return result
+
+func compare_cards_by_color(card1: Card, card2: Card) -> bool:
+	if card1.color == card2.color:
+		if card1.card_type == card2.card_type:
+			return card1.value < card2.value
+		return card1.card_type < card2.card_type
+	return card1.color < card2.color
+
+func compare_cards_by_number(card1: Card, card2: Card) -> bool:
+	if card1.card_type == card2.card_type:
+		if card1.card_type == Card.CardType.NUMBER:
+			return card1.value < card2.value
+		return card1.color < card2.color
+	return card1.card_type < card2.card_type
+
+func _on_sort_color_pressed():
+	if game_manager.players.size() > 0:
+		var player = game_manager.players[0]
+		player.hand = merge_sort_cards(player.hand, compare_cards_by_color)
+		update_hands()
+
+func _on_sort_number_pressed():
+	if game_manager.players.size() > 0:
+		var player = game_manager.players[0]
+		player.hand = merge_sort_cards(player.hand, compare_cards_by_number)
+		update_hands() 

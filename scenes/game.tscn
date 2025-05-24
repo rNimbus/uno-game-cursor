@@ -1,7 +1,14 @@
-[gd_scene load_steps=3 format=3 uid="uid://b6x8o0q4n6j8v"]
+[gd_scene load_steps=4 format=3 uid="uid://b6x8o0q4n6j8v"]
 
 [ext_resource type="Script" uid="uid://duosbd5e14cgn" path="res://scripts/game_manager.gd" id="1_rk4m2"]
 [ext_resource type="Script" uid="uid://ysj1w48j72r" path="res://scripts/ui_manager.gd" id="2_y8k4m"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_h1j2k"]
+bg_color = Color(0.12549, 0.12549, 0.12549, 0.901961)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
 
 [node name="Game" type="Node2D"]
 script = ExtResource("1_rk4m2")
@@ -192,3 +199,37 @@ offset_bottom = 354.0
 rotation = -1.5708
 text = "Bot 3"
 horizontal_alignment = 1
+
+[node name="HistoryBox" type="PanelContainer" parent="."]
+offset_left = 20.0
+offset_top = 400.0
+offset_right = 220.0
+offset_bottom = 600.0
+theme_override_styles/panel = SubResource("StyleBoxFlat_h1j2k")
+
+[node name="HistoryText" type="RichTextLabel" parent="HistoryBox"]
+layout_mode = 2
+theme_override_font_sizes/normal_font_size = 14
+bbcode_enabled = true
+text = "Game History:"
+scroll_following = true
+
+[node name="SortButtons" type="HBoxContainer" parent="."]
+offset_left = 826.0
+offset_top = 558.0
+offset_right = 1126.0
+offset_bottom = 598.0
+theme_override_constants/separation = 10
+alignment = 2
+
+[node name="ColorSort" type="Button" parent="SortButtons"]
+custom_minimum_size = Vector2(120, 40)
+layout_mode = 2
+theme_override_font_sizes/font_size = 14
+text = "Sort by Color"
+
+[node name="NumberSort" type="Button" parent="SortButtons"]
+custom_minimum_size = Vector2(120, 40)
+layout_mode = 2
+theme_override_font_sizes/font_size = 14
+text = "Sort by Number"
